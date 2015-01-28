@@ -4,9 +4,16 @@ require 'bigdecimal'
 
 # Cribbed from Unicorn Worker Killer, thanks!
 class GetProcessMem
-  KB_TO_BYTE = 1024          # 2**10   = 1024
-  MB_TO_BYTE = 1_048_576     # 1024**2 = 1_048_576
-  GB_TO_BYTE = 1_073_741_824 # 1024**3 = 1_073_741_824
+  if RUBY_VERSION >= '1.9'
+    KB_TO_BYTE = 1024          # 2**10   = 1024
+    MB_TO_BYTE = 1_048_576     # 1024**2 = 1_048_576
+    GB_TO_BYTE = 1_073_741_824 # 1024**3 = 1_073_741_824
+  else
+    KB_TO_BYTE = '1024'          # 2**10   = 1024
+    MB_TO_BYTE = '1_048_576'     # 1024**2 = 1_048_576
+    GB_TO_BYTE = '1_073_741_824' # 1024**3 = 1_073_741_824
+  end
+
   CONVERSION = { "kb" => KB_TO_BYTE, "mb" => MB_TO_BYTE, "gb" => GB_TO_BYTE }
   ROUND_UP   = BigDecimal.new("0.5")
   attr_reader :pid
@@ -57,11 +64,14 @@ class GetProcessMem
     lines = file.each_line.select {|line| line.match /^Rss/ }
     return if lines.empty?
     lines.reduce(0) do |sum, line|
-      line.match(/(?<value>(\d*\.{0,1}\d+))\s+(?<unit>\w\w)/) do |m|
-        value = BigDecimal.new(m[:value]) + ROUND_UP
-        unit  = m[:unit].downcase
-        sum  += CONVERSION[unit] * value
+      memory_data = line.match(/(\d*\.{0,1}\d+)\s+(\w\w)/)
+
+      if memory_data
+        value = BigDecimal.new(memory_data[1]) + ROUND_UP
+        unit  = memory_data[2].downcase
+        sum  += CONVERSION[unit].to_i * value
       end
+
       sum
     end
   rescue Errno::EACCES
@@ -73,6 +83,6 @@ class GetProcessMem
   # Pull memory from `ps` command, takes more resources and can freeze
   # in low memory situations
   def ps_memory
-    KB_TO_BYTE * BigDecimal.new(`ps -o rss= -p #{pid}`)
+    KB_TO_BYTE.to_i * BigDecimal.new(`ps -o rss= -p #{pid}`)
   end
 end
